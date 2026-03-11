@@ -1122,8 +1122,7 @@ Utilise des emojis, sois direct, concret, chaleureux. Réponds en français.`;
     });
     const data = await res.json();
     const txt = data.content?.[0]?.text || 'Bonne journée Raphaël ! 💪';
-    document.getElementById('morning-content').innerHTML = txt.replace(/
-/g,'<br>');
+    document.getElementById('morning-content').innerHTML = txt.replace(/\n/g,'<br>');
   } catch(e) {
     document.getElementById('morning-content').innerHTML = `<b>Bonjour Raphaël ! ☀️</b><br><br>Objectif aujourd'hui : <b style="color:#fb923c">${goalW}kg</b>${latestW?' (tu es à '+latestW+'kg)':''}<br><br>Reste ${daysLeft} jours pour atteindre ${GE_W}kg. Chaque repas compte ! 💪`;
   }
@@ -1159,7 +1158,7 @@ function openPlanning(){
   }
   container.innerHTML = days.map(d=>{
     const p = D.planning[d] || {};
-    const label = d===todayStr()?'Aujourd'hui':new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'});
+    const label = d===todayStr()?"Aujourd'hui":new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'});
     return `<div style="margin-bottom:14px;padding:12px;background:#080e1c;border-radius:10px;border:1px solid #1a2540">
       <div style="font-size:12px;font-weight:700;color:#60a5fa;margin-bottom:8px">${label}</div>
       <div style="display:flex;flex-direction:column;gap:6px">
@@ -1179,7 +1178,7 @@ function openPlanning(){
 function onPlanningInput(el){
   const val = el.value.toLowerCase();
   // Détecter si c'est une sortie pro/sociale pour poser des questions supplémentaires
-  const triggers = ['soirée','restaurant','business','client','dinner professionnel','repas professionnel','event','cocktail','dîner d'affaires','séminaire','conférence'];
+  const triggers = ['soirée','restaurant','business','client','dinner professionnel','repas professionnel','event','cocktail',"dîner d'affaires",'séminaire','conférence'];
   const isSocial = triggers.some(t=>val.includes(t));
   if(isSocial && !el.dataset.contextAsked){
     el.dataset.contextAsked = '1';
@@ -1254,7 +1253,7 @@ function savePlanning(){
   }
   save();
   closePlanning();
-  toast('Planning sauvegardé ✓ Je m'adapte à ta semaine !');
+  toast("Planning sauvegardé ✓ Je m'adapte à ta semaine !");
 }
 
 function closePlanning(){
