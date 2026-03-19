@@ -228,6 +228,20 @@ nav button .icon{font-size:18px}
       </div>
     </div>
 
+    <!-- Quick reco buttons for today -->
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button onclick="quickReco('lunch')" style="flex:1;padding:10px 8px;background:#0d1a2e;border:1px solid #1e3a5f;border-radius:12px;cursor:pointer;text-align:left">
+        <div style="font-size:18px">🍽️</div>
+        <div style="font-size:12px;font-weight:600;color:#60a5fa;margin-top:2px">Reco déjeuner</div>
+        <div style="font-size:10px;color:#556">Où et quoi manger ?</div>
+      </button>
+      <button onclick="quickReco('dinner')" style="flex:1;padding:10px 8px;background:#0d1a2e;border:1px solid #1e3a5f;border-radius:12px;cursor:pointer;text-align:left">
+        <div style="font-size:18px">🌙</div>
+        <div style="font-size:12px;font-weight:600;color:#a78bfa;margin-top:2px">Reco dîner</div>
+        <div style="font-size:10px;color:#556">Où et quoi manger ?</div>
+      </button>
+    </div>
+
     <!-- Planning button -->
     <div onclick="manualPlanning()" style="display:flex;align-items:center;gap:10px;background:#0d1a2e;border:1px solid #1e3a5f;border-radius:12px;padding:10px 14px;margin-bottom:12px;cursor:pointer">
       <span style="font-size:20px">📅</span>
@@ -329,14 +343,15 @@ let D = (()=>{try{const r=localStorage.getItem(SK);return r?JSON.parse(r):null}c
   apiKey:'',
   planning:{},       // { 'YYYY-MM-DD': { breakfast:'', lunch:'', dinner:'', context:'' } }
   lastPlanningAsk:'',// date de la dernière demande planning
-  lastBriefing:''    // date du dernier briefing matin
+  lastBriefing:'',   // date du dernier briefing matin
+  pwHash:''          // hash SHA-256 du mot de passe
 };
 const save = ()=>{try{localStorage.setItem(SK,JSON.stringify(D))}catch{}};
 
 // ═══════════════════════════════════════════════════════
 // GOAL CURVE — ligne droite d'aujourd'hui vers 83kg au 30 juin
 // ═══════════════════════════════════════════════════════
-const GS_DATE='2025-03-11', GS_W=98, GE_DATE='2025-06-30', GE_W=83;
+const GS_DATE='2026-03-19', GS_W=97.6, GE_DATE='2026-06-30', GE_W=83;
 const d2ms = d=>new Date(d+'T12:00:00').getTime();
 // goalAt() : interpolation linéaire depuis le poids actuel du jour jusqu'à 83kg
 // Si pas de poids saisi, part de 98kg. Recalculé dynamiquement.
@@ -491,7 +506,7 @@ function renderToday(){
   if(a200){const show=rem>0&&rem<=200&&tot>0&&selDate===todayStr();a200.style.display=show?'block':'none';if(aRem)aRem.textContent=rem;}
   // Badge objectif atteint = a mangé quelque chose ET reste sous la cible
   const badge=document.getElementById('goal-badge');
-  if(badge) badge.style.display=(tot>0&&tot<tgt&&selDate===todayStr())?'block':'none';
+  if(badge){const hr=new Date().getHours(); badge.style.display=(tot>0&&tot<tgt&&selDate===todayStr()&&hr>=21)?'block':'none';}
 
   // Remaining box — smart personalized recs
   const info=getSmartRecs(rem);
@@ -610,10 +625,11 @@ function renderSuggestions(){
 // WEIGHT CHART SVG
 // ═══════════════════════════════════════════════════════
 function buildChartSVG(){
-  const W=320,H=165,PL=36,PR=14,PT=16,PB=30;
+  const W=320,H=175,PL=38,PR=14,PT=16,PB=36;
   const pw=W-PL-PR, ph=H-PT-PB;
   const wh=Object.entries(D.entries).filter(([,e])=>e.weight).sort(([a],[b])=>a.localeCompare(b));
-  const startDate=wh.length>0?wh[0][0]:todayStr();
+  // Toujours partir de GS_DATE pour que l'axe X soit cohérent
+  const startDate=GS_DATE;
   const startMs=d2ms(startDate), endMs=d2ms(GE_DATE);
   const xD=d=>PL+((d2ms(d)-startMs)/(endMs-startMs))*pw;
   const allW=[...wh.map(([,e])=>e.weight),GS_W,GE_W];
@@ -662,29 +678,34 @@ function buildChartSVG(){
   });
   if(wh.length===0)actualDots+=`<text x="${W/2}" y="${H/2+4}" fill="#445" font-size="12" text-anchor="middle">Saisis ton premier poids !</text>`;
 
-  // Date labels on X axis — every 2 weeks, format "15/03"
+  // Date labels on X axis — 1 per month + today marker
   let months='';
   {
-    let cur2=new Date(startDate+'T12:00:00');
-    // Round to nearest start of 2-week period
+    const MOIS=['Jan','Fev','Mar','Avr','Mai','Jun','Jul','Aou','Sep','Oct','Nov','Dec'];
+    // Un label par mois
+    let cur2=new Date(GS_DATE+'T12:00:00');
     cur2=new Date(cur2.getFullYear(),cur2.getMonth(),1);
     const endD2=new Date(GE_DATE+'T12:00:00');
     while(cur2<=endD2){
       const ds2=cur2.toISOString().slice(0,10);
       const x2=xD(ds2);
-      const lbl=(cur2.getDate()<10?'0':'')+cur2.getDate()+'/'+(cur2.getMonth()<9?'0':'')+(cur2.getMonth()+1);
-      if(x2>=PL&&x2<=W-PR){
-        months+=`<line x1="${x2}" y1="${PT+ph}" x2="${x2}" y2="${PT+ph+3}" stroke="#334" stroke-width="1"/>`;
-        months+=`<text x="${x2}" y="${H-2}" fill="#556" font-size="8" text-anchor="middle">${lbl}</text>`;
+      if(x2>=PL&&x2<=W-PR-4){
+        months+=`<line x1="${x2}" y1="${PT+ph}" x2="${x2}" y2="${PT+ph+4}" stroke="#334" stroke-width="1"/>`;
+        months+=`<text x="${x2}" y="${H-3}" fill="#667" font-size="9" text-anchor="middle" font-weight="500">${MOIS[cur2.getMonth()]}</text>`;
       }
-      // Advance by ~15 days
-      cur2=new Date(cur2.getFullYear(),cur2.getMonth(),cur2.getDate()+15);
+      cur2=new Date(cur2.getFullYear(),cur2.getMonth()+1,1);
     }
-    // Always show end date
+    // Aujourd'hui
+    const tx2=xD(todayStr());
+    if(tx2>=PL+4&&tx2<=W-PR-4){
+      months+=`<line x1="${tx2}" y1="${PT+ph}" x2="${tx2}" y2="${PT+ph+4}" stroke="#60a5fa" stroke-width="1.5"/>`;
+      months+=`<text x="${tx2}" y="${H-3}" fill="#60a5fa" font-size="8" text-anchor="middle" font-weight="700">auj.</text>`;
+    }
+    // Date fin (30/06)
     const ex=xD(GE_DATE);
     if(ex>=PL&&ex<=W-PR){
-      months+=`<line x1="${ex}" y1="${PT+ph}" x2="${ex}" y2="${PT+ph+3}" stroke="#f87171" stroke-width="1"/>`;
-      months+=`<text x="${ex}" y="${H-2}" fill="#f87171" font-size="8" text-anchor="middle">30/06</text>`;
+      months+=`<line x1="${ex}" y1="${PT+ph}" x2="${ex}" y2="${PT+ph+4}" stroke="#f87171" stroke-width="1.5"/>`;
+      months+=`<text x="${ex}" y="${H-3}" fill="#f87171" font-size="8" text-anchor="middle" font-weight="700">30/06</text>`;
     }
   }
 
@@ -705,7 +726,7 @@ function buildChartSVG(){
   </div>`;
 
   const statBox=`<div style="display:flex;gap:8px;margin-top:10px">
-    ${[['Départ',GS_W+'kg','#f87171'],['Obj. 30 juin',GE_W+'kg','#f87171'],['Restant',(latest!==null?(latest-GE_W).toFixed(1):15)+'kg','#a78bfa'],['Obj. auj.',gw+'kg','#fb923c']].map(([l,v,c])=>`
+    ${[['Départ',GS_W+'kg','#f87171'],['Obj. 30/06/26',GE_W+'kg','#f87171'],['Restant',(latest!==null?(latest-GE_W).toFixed(1):15)+'kg','#a78bfa'],['Obj. auj.',gw+'kg','#fb923c']].map(([l,v,c])=>`
     <div style="flex:1;background:#0d1220;border-radius:8px;padding:7px 5px;border:1px solid #1a2540;text-align:center">
       <div style="font-size:8.5px;color:#445;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px">${l}</div>
       <div class="num" style="font-size:13px;color:${c}">${v}</div>
@@ -718,11 +739,12 @@ function buildChartSVG(){
         <stop offset="0%" stop-color="#60a5fa" stop-opacity="0.2"/>
         <stop offset="100%" stop-color="#60a5fa" stop-opacity="0"/>
       </linearGradient>
-      <clipPath id="pc"><rect x="${PL}" y="${PT}" width="${pw}" height="${ph}"/></clipPath>
+      <clipPath id="pc"><rect x="${PL-1}" y="${PT-2}" width="${pw+2}" height="${ph+4}"/></clipPath>
     </defs>
     ${ticks}${todayLine}
     <g clip-path="url(#pc)">${goalLine}${actualLine}</g>
-    ${actualDots}${months}
+    ${actualDots}
+    ${months}
   </svg>`+statBox;
 }
 
@@ -1040,7 +1062,11 @@ function renderHistory(){
 // ═══════════════════════════════════════════════════════
 function renderProfile(){
   const apiKeyMasked = D.apiKey ? D.apiKey.slice(0,8)+'…'+D.apiKey.slice(-4) : '';
-  document.getElementById('profile-fields').innerHTML=`
+  const pwBlock = D.pwHash
+    ? '<div style="background:#0a1220;border:1px solid #1e3a5f;border-radius:10px;padding:12px;margin-bottom:14px"><div style="font-size:10px;color:#3a5a8a;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">🔒 Mot de passe</div><input class=\"inp\" id=\"pw-current\" type=\"password\" placeholder=\"Mot de passe actuel\" style=\"font-size:13px;margin-bottom:6px;width:100%\"/><input class=\"inp\" id=\"pw-new\" type=\"password\" placeholder=\"Nouveau mot de passe\" style=\"font-size:13px;margin-bottom:6px;width:100%\"/><input class=\"inp\" id=\"pw-new2\" type=\"password\" placeholder=\"Confirmer\" style=\"font-size:13px;margin-bottom:8px;width:100%\"/><div id=\"pw-error\" style=\"display:none;color:#f87171;font-size:11px;margin-bottom:6px\"></div><button class=\"btn\" onclick=\"changePassword()\" style=\"width:100%\">Modifier le mot de passe</button></div>'
+    : '<div style="background:#0a1220;border:1px solid #1e3a5f;border-radius:10px;padding:12px;margin-bottom:14px"><div style="font-size:10px;color:#3a5a8a;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">🔒 Définir un mot de passe</div><input class=\"inp\" id=\"pw-new\" type=\"password\" placeholder=\"Nouveau mot de passe\" style=\"font-size:13px;margin-bottom:6px;width:100%\"/><input class=\"inp\" id=\"pw-new2\" type=\"password\" placeholder=\"Confirmer\" style=\"font-size:13px;margin-bottom:8px;width:100%\"/><div id=\"pw-error\" style=\"display:none;color:#f87171;font-size:11px;margin-bottom:6px\"></div><button class=\"btn\" onclick=\"changePassword()\" style=\"width:100%\">Définir le mot de passe</button></div>';
+
+  document.getElementById('profile-fields').innerHTML=`${pwBlock}` + `
     <div style="margin-bottom:14px;padding:12px;background:#0a1220;border:1px solid #1e3a5f;border-radius:10px">
       <div style="font-size:10px;color:#3a5a8a;margin-bottom:4px;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🔑 Clé API Anthropic</div>
       <div style="font-size:11px;color:#556;margin-bottom:8px">Nécessaire pour le Coach IA et l'estimation calories. <a href="https://console.anthropic.com/" target="_blank" style="color:#60a5fa">Obtenir ici →</a></div>
@@ -1113,7 +1139,27 @@ function saveApiKey(){
 function resetData(){
   if(!confirm('Effacer toutes les données ?'))return;
   localStorage.removeItem(SK);
+  sessionStorage.removeItem(SESSION_KEY);
   location.reload();
+}
+
+async function changePassword(){
+  const cur = document.getElementById('pw-current').value;
+  const nw  = document.getElementById('pw-new').value;
+  const nw2 = document.getElementById('pw-new2').value;
+  const errEl = document.getElementById('pw-error');
+  if(!nw||nw.length<4){ errEl.textContent='Mot de passe trop court (min 4 caractères)'; errEl.style.display='block'; return; }
+  if(nw!==nw2){ errEl.textContent='Les mots de passe ne correspondent pas'; errEl.style.display='block'; return; }
+  if(D.pwHash){
+    const curHash = await sha256(cur);
+    if(curHash !== D.pwHash){ errEl.textContent='Mot de passe actuel incorrect'; errEl.style.display='block'; return; }
+  }
+  const newHash = await sha256(nw);
+  D.pwHash = newHash; save();
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify({hash:newHash, ts:Date.now()}));
+  errEl.style.display='none';
+  ['pw-current','pw-new','pw-new2'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  toast('Mot de passe modifié ✓');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1152,8 +1198,11 @@ async function checkMorningBriefing(){
 
   const planLines = ['breakfast','lunch','dinner'].map(m=>{
     const fr = m==='breakfast'?'Petit déjeuner':m==='lunch'?'Déjeuner':'Dîner';
-    return planToday[m] ? `${fr}: ${planToday[m]}` : '';
-  }).filter(Boolean).join(', ') || 'Non planifié';
+    if(!planToday[m]) return '';
+    const company=planToday[m+'_company']?(' ('+planToday[m+'_company']+')'):'';
+    const quartier=planToday[m+'_quartier']?(' à '+planToday[m+'_quartier']):'';
+    return fr+': '+planToday[m]+company+quartier;
+  }).filter(Boolean).join(' | ') || 'Non planifié';
 
   const prompt = `Tu es coach santé casher méditerranéen de Raphaël (Nice). Génère un briefing matin court et motivant (max 180 mots). 
 
@@ -1174,28 +1223,152 @@ Format:
 4. Rappel motivant (1 phrase)
 Utilise des emojis, sois direct, concret, chaleureux. Réponds en français.`;
 
-  try {
-    document.getElementById('morning-date').textContent = new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
-    document.getElementById('morning-content').innerHTML = '<div style="text-align:center;color:#556;font-size:12px">⏳ Génération de ton briefing…</div>';
-    document.getElementById('morning-modal').style.display = 'flex';
+  // today est déjà déclaré plus haut dans la fonction
+  const planToday2 = D.planning[today]||{};
 
+  // Montrer le modal étape 1
+  document.getElementById('morning-date').textContent = new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
+  document.getElementById('morning-content').innerHTML = '<div style="text-align:center;color:#556;font-size:12px">⏳ Génération de ton briefing…</div>';
+  document.getElementById('morning-modal').style.display = 'flex';
+  ['morning-step-1','morning-step-2','morning-step-3'].forEach(function(id,i){
+    document.getElementById(id).style.display = i===0?'block':'none';
+  });
+  setStepDots(1);
+
+  try {
     const res = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':D.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:400,messages:[{role:'user',content:prompt}]})
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:350,messages:[{role:'user',content:prompt}]})
     });
     const data = await res.json();
     const txt = data.content?.[0]?.text || 'Bonne journée Raphaël ! 💪';
     document.getElementById('morning-content').innerHTML = txt.replace(/\n/g,'<br>');
   } catch(e) {
-    document.getElementById('morning-content').innerHTML = `<b>Bonjour Raphaël ! ☀️</b><br><br>Objectif aujourd'hui : <b style="color:#fb923c">${goalW}kg</b>${latestW?' (tu es à '+latestW+'kg)':''}<br><br>Reste ${daysLeft} jours pour atteindre ${GE_W}kg. Chaque repas compte ! 💪`;
+    document.getElementById('morning-content').innerHTML = '<b>Bonjour Raphaël ! ☀️</b><br><br>Objectif : <b style="color:#fb923c">'+goalW+'kg</b>'+(latestW?' (tu es à '+latestW+'kg)':'')+'<br><br>Reste '+daysLeft+' jours pour atteindre '+GE_W+'kg. Chaque repas compte ! 💪';
+  }
+}
+
+function setStepDots(active){
+  [1,2,3].forEach(function(i){
+    const el=document.getElementById('step-dot-'+i);
+    if(el) el.style.background = i===active?'#60a5fa':'#1e3a5f';
+  });
+}
+
+function mornToggle(btn, prefix){
+  [prefix+'-seul',prefix+'-acc',prefix+'-casa'].forEach(function(id){
+    const b=document.getElementById(id);
+    if(b){b.style.background='#0d1525';b.style.borderColor='#1e3a5f';}
+  });
+  btn.style.background='#1e3a6a'; btn.style.borderColor='#60a5fa';
+}
+
+function getMornVal(prefix){
+  const ids=[prefix+'-seul',prefix+'-acc',prefix+'-casa'];
+  const vals=['Seul','Accompagne','Maison'];
+  for(let i=0;i<ids.length;i++){
+    const b=document.getElementById(ids[i]);
+    if(b&&b.style.background.includes('1e3a6a')) return vals[i];
+  }
+  return '';
+}
+
+function morningStep2(){
+  document.getElementById('morning-step-1').style.display='none';
+  document.getElementById('morning-step-2').style.display='block';
+  setStepDots(2);
+  // Préremplir depuis planning
+  const today=todayStr(), p=D.planning[today]||{};
+  const li=document.getElementById('morn-lunch-lieu');
+  const di=document.getElementById('morn-dinner-lieu');
+  if(li&&p.lunch_quartier) li.value=p.lunch_quartier;
+  if(di&&p.dinner_quartier) di.value=p.dinner_quartier;
+  // Préremplir boutons company
+  if(p.lunch_company){
+    const map={Seul:'ml-seul',Accompagne:'ml-acc',Maison:'ml-casa'};
+    const b=document.getElementById(map[p.lunch_company]);
+    if(b){b.style.background='#1e3a6a';b.style.borderColor='#60a5fa';}
+  }
+  if(p.dinner_company){
+    const map={Seul:'md-seul',Accompagne:'md-acc',Maison:'md-casa'};
+    const b=document.getElementById(map[p.dinner_company]);
+    if(b){b.style.background='#1e3a6a';b.style.borderColor='#60a5fa';}
+  }
+}
+
+async function morningStep3(){
+  // Sauvegarder les choix
+  const today=todayStr();
+  if(!D.planning[today]) D.planning[today]={};
+  const lunchLieu=(document.getElementById('morn-lunch-lieu')||{}).value||'';
+  const dinnerLieu=(document.getElementById('morn-dinner-lieu')||{}).value||'';
+  const lunchComp=getMornVal('ml');
+  const dinnerComp=getMornVal('md');
+  if(lunchLieu){D.planning[today].lunch_quartier=lunchLieu; D.planning[today].lunch=lunchLieu;}
+  if(dinnerLieu){D.planning[today].dinner_quartier=dinnerLieu; D.planning[today].dinner=dinnerLieu;}
+  if(lunchComp) D.planning[today].lunch_company=lunchComp;
+  if(dinnerComp) D.planning[today].dinner_company=dinnerComp;
+  save();
+
+  document.getElementById('morning-step-2').style.display='none';
+  document.getElementById('morning-step-3').style.display='block';
+  setStepDots(3);
+  document.getElementById('morning-reco-content').innerHTML='<div style="text-align:center;padding:16px;color:#556">⏳ Je prépare tes recommandations…</div>';
+
+  if(!D.apiKey){
+    document.getElementById('morning-reco-content').innerHTML='<div style="color:#f87171;font-size:12px">Configure ta clé API dans ⚙️ Profil pour les recommandations.</div>';
+    return;
+  }
+
+  const tgt=D.profile.targetCalories;
+  const lunchBudget=Math.round(tgt*0.35);
+  const dinnerBudget=Math.round(tgt*0.40);
+  const liked=(D.tastes.liked||[]).slice(0,5).join(', ')||'varié';
+  const disliked=(D.tastes.disliked||[]).slice(0,3).join(', ')||'';
+  const lunchCtx=lunchComp==='Maison'?'à la maison (casher complet)':(lunchComp==='Accompagne'?'en restaurant, accompagné':'en restaurant, seul');
+  const dinnerCtx=dinnerComp==='Maison'?'à la maison (casher complet)':(dinnerComp==='Accompagne'?'en restaurant, accompagné':'en restaurant, seul');
+
+  const parts=[
+    'Tu es coach nutrition casher de Raphaël à Nice.',
+    'Règles hors domicile : PAS viande, PAS fromage, PAS crustacés. Poissons à écailles OK (saumon, daurade, bar, thon, sardine).',
+    'À la maison : casher complet, viande casher OK.',
+    '',
+    "Génère des recommandations concrètes pour aujourd'hui :",
+    '',
+    'DÉJEUNER — '+lunchCtx+(lunchLieu?' à/dans : '+lunchLieu:' à Nice')+' — budget '+lunchBudget+' kcal',
+    'DÎNER — '+dinnerCtx+(dinnerLieu?' à/dans : '+dinnerLieu:' à Nice')+' — budget '+dinnerBudget+' kcal',
+    '',
+    'Aliments aimés : '+liked,
+    'Aliments évités : '+(disliked||'aucun'),
+    '',
+    'Pour chaque repas :',
+    '- Si restaurant : 2-3 plats ou options à commander (avec kcal estimés)',
+    '- Si à la maison : 1-2 recettes rapides casher adaptées au budget',
+    '- 1 conseil pratique (éviter X, demander sans Y...)',
+    '',
+    'Format court et actionnable. Emojis OK. Max 250 mots total.'
+  ];
+
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':D.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,messages:[{role:'user',content:parts.join('\n')}]})
+    });
+    const data=await res.json();
+    const txt=data.content?.[0]?.text||'';
+    const html=txt.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>');
+    document.getElementById('morning-reco-content').innerHTML=html;
+    // Sauvegarder pour le briefing
+    D.planning[today].morningReco=txt.slice(0,400); save();
+  }catch(e){
+    document.getElementById('morning-reco-content').innerHTML="<div style='color:#f87171'>Erreur réseau — configure ta clé API dans Profil.</div>";
   }
 }
 
 function closeMorning(){
   document.getElementById('morning-modal').style.display='none';
-  // Après briefing, vérifier si on doit demander le planning
-  setTimeout(checkPlanningNeeded, 800);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1243,12 +1416,13 @@ function openPlanning(){
 
 function buildMealRow(d,k,lbl,p){
   const val=p[k]||'', company=p[k+'_company']||'', quartier=p[k+'_quartier']||'';
+  const mealLabel=k==='lunch'?'Déjeuner':'Dîner';
   const sSeul='flex:1;padding:5px 2px;font-size:10px;border-radius:6px;cursor:pointer;color:#c8d8ee;border:1px solid '+(company==='Seul'?'#60a5fa':'#1e3a5f')+';background:'+(company==='Seul'?'#1e3a6a':'#0d1525');
   const sAcc='flex:1;padding:5px 2px;font-size:10px;border-radius:6px;cursor:pointer;color:#c8d8ee;border:1px solid '+(company==='Accompagne'?'#60a5fa':'#1e3a5f')+';background:'+(company==='Accompagne'?'#1e3a6a':'#0d1525');
   let h='<div style="margin-bottom:7px">';
   h+='<input class="inp" style="font-size:12px;padding:6px 10px;width:100%;box-sizing:border-box;margin-bottom:4px"';
   h+=' placeholder="'+lbl+'" data-date="'+d+'" data-meal="'+k+'" value="'+val+'" oninput="onPlanningInput(this)"/>';
-  h+='<div style="display:flex;gap:5px">';
+  h+='<div style="display:flex;gap:5px;margin-bottom:4px">';
   // Seul/Accompagné
   h+='<div style="flex:1"><div style="font-size:9px;color:#445;margin-bottom:2px">Seul ou accompagne ?</div>';
   h+='<div style="display:flex;gap:3px">';
@@ -1258,12 +1432,31 @@ function buildMealRow(d,k,lbl,p){
   // Quartier
   h+='<div style="flex:1"><div style="font-size:9px;color:#445;margin-bottom:2px">Quartier / lieu</div>';
   h+='<input class="inp" style="font-size:11px;padding:4px 8px;width:100%;box-sizing:border-box"';
-  h+=' placeholder="Vieux-Nice..." data-date="'+d+'" data-meal="'+k+'_quartier" value="'+quartier+'"/>';
+  h+=' placeholder="Vieux-Nice, Cimiez..." data-date="'+d+'" data-meal="'+k+'_quartier" data-meallabel="'+mealLabel+'" value="'+quartier+'"';
+  h+=' oninput="onQuartierInput(this)"/>';
   h+='</div>';
-  h+='</div></div>';
+  h+='</div>';
+  // Bouton reco IA — apparaît quand quartier renseigné
+  h+='<div id="reco-btn-'+d+'-'+k+'" style="'+(quartier?'':'display:none;')+'">';
+  h+='<button data-rd="'+d+'" data-rk="'+k+'" data-rl="'+mealLabel+'" onclick="planRecoClick(this)" style="width:100%;padding:6px;font-size:11px;border-radius:8px;border:1px solid #1e3a5f;background:linear-gradient(135deg,#0d2040,#1a1035);color:#a78bfa;cursor:pointer;font-weight:600">✨ Voir les recommandations pour ce '+mealLabel.toLowerCase()+'</button>';
+  h+='</div>';
+  h+='</div>';
   return h;
 }
 
+function onQuartierInput(el){
+  const d=el.dataset.date, k=el.dataset.meal.replace('_quartier','');
+  const btnDiv=document.getElementById('reco-btn-'+d+'-'+k);
+  if(btnDiv) btnDiv.style.display=el.value.trim()?'block':'none';
+  // Save quartier live
+  if(!D.planning[d]) D.planning[d]={};
+  D.planning[d][el.dataset.meal]=el.value.trim();
+  save();
+}
+
+function planRecoClick(btn){
+  getRecoRepas(btn.dataset.rd, btn.dataset.rk, btn.dataset.rl);
+}
 function planToggle(btn){
   const d=btn.dataset.d, k=btn.dataset.k, v=btn.dataset.v;
   if(!D.planning[d]) D.planning[d]={};
@@ -1365,20 +1558,254 @@ function closePlanning(){
 // Bouton pour ouvrir le planning manuellement
 function manualPlanning(){ D.lastPlanningAsk=''; openPlanning(); }
 
-renderToday();
-setTimeout(checkMorningBriefing, 600);
+function quickReco(meal){
+  const mealLabel=meal==='lunch'?'Déjeuner':'Dîner';
+  const today=todayStr();
+  const saved=(D.planning[today]||{})[meal+'_quartier']||'';
+  // Petit popup pour demander le quartier si pas déjà renseigné
+  const modal=document.getElementById('reco-modal');
+  document.getElementById('reco-title').textContent='📍 '+mealLabel+' — où ?';
+  document.getElementById('reco-subtitle').textContent='Dis-moi où tu vas manger';
+  document.getElementById('reco-content').innerHTML=
+    '<div style="margin-bottom:12px;font-size:13px;color:#94a3b8">Dans quel quartier ou lieu ?</div>'+
+    '<input id="quick-quartier" class="inp" style="width:100%;margin-bottom:12px;font-size:13px" placeholder="Vieux-Nice, Cimiez, Promenade..." value="'+saved+'"/>'+
+    '<div style="margin-bottom:12px">'+
+    '<div style="font-size:11px;color:#556;margin-bottom:6px">Seul ou accompagné ?</div>'+
+    '<div style="display:flex;gap:6px">'+
+    '<button id="qr-seul" onclick="qrToggle(this)" style="flex:1;padding:7px;font-size:12px;border-radius:8px;border:1px solid #1e3a5f;background:#0d1525;color:#c8d8ee;cursor:pointer">Seul</button>'+
+    '<button id="qr-acc" onclick="qrToggle(this)" style="flex:1;padding:7px;font-size:12px;border-radius:8px;border:1px solid #1e3a5f;background:#0d1525;color:#c8d8ee;cursor:pointer">Accompagné</button>'+
+    '</div></div>'+
+    '<button data-rm="'+meal+'" data-rml="'+mealLabel+'" onclick="launchQuickRecoClick(this)" class="btn" style="width:100%;background:linear-gradient(135deg,#1d4ed8,#7c3aed)">✨ Voir les recommandations</button>';
+  modal.style.display='flex';
+  // Pre-select company if saved
+  const savedCompany=(D.planning[today]||{})[meal+'_company']||'';
+  if(savedCompany==='Seul'){const b=document.getElementById('qr-seul');if(b){b.style.background='#1e3a6a';b.style.borderColor='#60a5fa';}}
+  if(savedCompany==='Accompagne'){const b=document.getElementById('qr-acc');if(b){b.style.background='#1e3a6a';b.style.borderColor='#60a5fa';}}
+}
+
+function qrToggle(btn){
+  ['qr-seul','qr-acc'].forEach(function(id){
+    const b=document.getElementById(id);
+    if(b){b.style.background='#0d1525';b.style.borderColor='#1e3a5f';}
+  });
+  btn.style.background='#1e3a6a'; btn.style.borderColor='#60a5fa';
+}
+
+function launchQuickRecoClick(btn){
+  launchQuickReco(btn.dataset.rm, btn.dataset.rml);
+}
+function launchQuickReco(meal, mealLabel){
+  const today=todayStr();
+  const q=document.getElementById('quick-quartier');
+  const quartier=q?q.value.trim():'Nice';
+  const seulBtn=document.getElementById('qr-seul');
+  const company=seulBtn&&seulBtn.style.background.includes('1e3a6a')?'Seul':'Accompagne';
+  if(!D.planning[today]) D.planning[today]={};
+  D.planning[today][meal+'_quartier']=quartier;
+  D.planning[today][meal+'_company']=company;
+  save();
+  getRecoRepas(today, meal, mealLabel);
+}
+
+async function getRecoRepas(date, meal, mealLabel){
+  if(!D.apiKey){ toast('Clé API manquante — configure dans Profil','err'); return; }
+  const p=D.planning[date]||{};
+  const quartier=p[meal+'_quartier']||'Nice centre';
+  const company=p[meal+'_company']||'';
+  const context=p[meal]||'';
+  const liked=(D.tastes.liked||[]).slice(0,6).join(', ')||'varié';
+  const disliked=(D.tastes.disliked||[]).slice(0,4).join(', ')||'';
+  const tgt=D.profile.targetCalories;
+  const isToday=date===todayStr();
+  const calBudget=isToday?Math.max(200,remaining()):Math.round(tgt*(meal==='lunch'?0.35:0.40));
+  const dateLabel=date===todayStr()?"aujourd'hui":new Date(date+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
+  const socialCtx=company==='Accompagne'?'repas accompagné (peut être pro ou social)':'repas seul';
+  const freeTastes=(D.tastes.free||[]).slice(-4).map(function(x){return x.a||x;}).join('; ');
+
+  // Show modal with loading
+  const modal=document.getElementById('reco-modal');
+  document.getElementById('reco-title').textContent='🍽️ '+mealLabel+' — '+quartier;
+  document.getElementById('reco-subtitle').textContent=dateLabel+' · '+calBudget+' kcal budget';
+  document.getElementById('reco-content').innerHTML='<div style="text-align:center;padding:20px;color:#556">⏳ Je cherche les meilleures options pour toi...</div>';
+  modal.style.display='flex';
+
+  const promptParts=[
+    'Tu es coach nutrition casher à Nice.',
+    '',
+    'Contexte du repas :',
+    '- '+mealLabel+' '+dateLabel,
+    '- Quartier : '+quartier,
+    '- '+socialCtx+(context?' ('+context+')':''),
+    '- Budget calorique : ~'+calBudget+' kcal',
+    '- Règles casher hors domicile : PAS de viande, PAS de fromage, PAS de crustacés. Poissons à écailles OK (saumon, daurade, bar, thon, sardine).',
+    '- Aliments aimés : '+liked,
+    '- Aliments évités : '+(disliked||'aucun'),
+    '- Autres préférences : '+(freeTastes||'aucune'),
+    '',
+    'Réponds en français avec :',
+    '1. 3 restaurants recommandés dans ce quartier de Nice (vrais établissements si possible), avec pour chacun :',
+    '   - Nom et type de cuisine',
+    '   - 2 plats casher-compatibles avec estimation kcal',
+    '   - Conseil de commande (éviter X, demander sans...)',
+    '2. Stratégie : 1-2 lignes pour tenir mon objectif calorique dans ce repas.',
+    '',
+    'Sois concret, pratique, adapté à Nice. Emojis bienvenus.'
+  ];
+  const prompt=promptParts.join('\n');
+
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':D.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:600,messages:[{role:'user',content:prompt}]})
+    });
+    const data=await res.json();
+    const txt=data.content?.[0]?.text||'Impossible de générer les recommandations.';
+    // Format avec markdown basique
+    const html=txt.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n#{1,3} (.+)/g,'<div style="font-weight:700;color:#e8edf5;margin-top:10px">$1</div>').replace(/\n/g,'<br>');
+    document.getElementById('reco-content').innerHTML=html;
+    // Save reco in planning for morning briefing
+    if(!D.planning[date]) D.planning[date]={};
+    D.planning[date][meal+'_reco']=txt.slice(0,300);
+    save();
+  }catch(e){
+    document.getElementById('reco-content').innerHTML='<div style="color:#f87171">Erreur de connexion. Vérifie ta clé API et internet.</div>';
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// PASSWORD
+// ═══════════════════════════════════════════════════════
+const SESSION_KEY = 'hl_session';
+
+async function sha256(str){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+function isSessionValid(){
+  try{
+    const s = sessionStorage.getItem(SESSION_KEY);
+    if(!s) return false;
+    const {hash, ts} = JSON.parse(s);
+    // Session valide 12h
+    if(Date.now()-ts > 12*60*60*1000) return false;
+    return hash === D.pwHash;
+  }catch{return false;}
+}
+
+async function checkLogin(){
+  const val = document.getElementById('login-input').value;
+  if(!val){ document.getElementById('login-error').style.display='block'; return; }
+  const hash = await sha256(val);
+  // Premier lancement : définir le mot de passe
+  if(!D.pwHash){
+    D.pwHash = hash; save();
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({hash, ts:Date.now()}));
+    unlockApp();
+    return;
+  }
+  if(hash === D.pwHash){
+    document.getElementById('login-error').style.display='none';
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({hash, ts:Date.now()}));
+    unlockApp();
+  } else {
+    document.getElementById('login-input').value='';
+    document.getElementById('login-error').style.display='block';
+    document.getElementById('login-input').focus();
+  }
+}
+
+function unlockApp(){
+  document.getElementById('login-screen').style.display='none';
+  renderToday();
+  setTimeout(checkMorningBriefing, 600);
+}
+
+function initApp(){
+  const screen = document.getElementById('login-screen');
+  if(!D.pwHash){
+    // Pas encore de mot de passe — montrer l'écran pour en créer un
+    document.querySelector('#login-screen .card-title, #login-screen [style*="Mot de passe"]') ;
+    const lbl = screen.querySelector('[style*="Mot de passe"]');
+    if(lbl) lbl.textContent = 'Crée ton mot de passe';
+    screen.style.display='flex';
+    setTimeout(()=>document.getElementById('login-input').focus(), 100);
+  } else if(isSessionValid()){
+    // Session encore valide — accès direct
+    unlockApp();
+  } else {
+    screen.style.display='flex';
+    setTimeout(()=>document.getElementById('login-input').focus(), 100);
+  }
+}
+
+initApp();
 </script>
 
   <!-- ═══ MORNING BRIEFING MODAL ═══ -->
   <div id="morning-modal" style="display:none;position:fixed;inset:0;background:#000000cc;z-index:200;align-items:center;justify-content:center;padding:16px">
-    <div style="background:linear-gradient(135deg,#0d1835,#0a1220);border:1px solid #1e3a6a;border-radius:18px;padding:22px;width:100%;max-width:400px;max-height:85vh;overflow-y:auto">
-      <div style="text-align:center;margin-bottom:16px">
+    <div style="background:linear-gradient(135deg,#0d1835,#0a1220);border:1px solid #1e3a6a;border-radius:18px;padding:20px;width:100%;max-width:400px;max-height:90vh;overflow-y:auto">
+
+      <!-- En-tête fixe -->
+      <div style="text-align:center;margin-bottom:14px">
         <div style="font-size:28px">☀️</div>
         <div style="font-size:17px;font-weight:700;color:#e8edf5;margin-top:4px">Bonjour Raphaël !</div>
         <div id="morning-date" style="font-size:12px;color:#556;margin-top:2px"></div>
+        <!-- Indicateur d'étape -->
+        <div style="display:flex;justify-content:center;gap:6px;margin-top:10px">
+          <div id="step-dot-1" style="width:8px;height:8px;border-radius:50%;background:#60a5fa"></div>
+          <div id="step-dot-2" style="width:8px;height:8px;border-radius:50%;background:#1e3a5f"></div>
+          <div id="step-dot-3" style="width:8px;height:8px;border-radius:50%;background:#1e3a5f"></div>
+        </div>
       </div>
-      <div id="morning-content" style="font-size:13px;color:#c8d8ee;line-height:1.7;margin-bottom:16px"></div>
-      <button class="btn" onclick="closeMorning()" style="width:100%;background:linear-gradient(135deg,#1d4ed8,#7c3aed)">C'est parti ! 💪</button>
+
+      <!-- ÉTAPE 1 : Briefing -->
+      <div id="morning-step-1">
+        <div id="morning-content" style="font-size:13px;color:#c8d8ee;line-height:1.7;margin-bottom:14px"></div>
+        <button class="btn" onclick="morningStep2()" style="width:100%;background:linear-gradient(135deg,#1d4ed8,#7c3aed)">Planifier mes repas →</button>
+      </div>
+
+      <!-- ÉTAPE 2 : Où tu manges ? -->
+      <div id="morning-step-2" style="display:none">
+        <div style="font-size:14px;font-weight:600;color:#e8edf5;margin-bottom:14px">📍 Où déjeunes et dînes-tu ?</div>
+
+        <!-- Déjeuner -->
+        <div style="background:#080e1c;border-radius:10px;padding:12px;margin-bottom:10px;border:1px solid #1a2540">
+          <div style="font-size:12px;font-weight:700;color:#60a5fa;margin-bottom:8px">🍽️ Déjeuner</div>
+          <input id="morn-lunch-lieu" class="inp" style="width:100%;font-size:12px;margin-bottom:6px"
+            placeholder="Quartier ou restaurant (ex: Vieux-Nice, Le Plongeoir...)"/>
+          <div style="display:flex;gap:5px">
+            <button id="ml-seul" onclick="mornToggle(this,'ml')" style="flex:1;padding:5px;font-size:11px;border-radius:7px;border:1px solid #1e3a5f;background:#0d1525;color:#c8d8ee;cursor:pointer">Seul</button>
+            <button id="ml-acc" onclick="mornToggle(this,'ml')" style="flex:1;padding:5px;font-size:11px;border-radius:7px;border:1px solid #1e3a5f;background:#0d1525;color:#c8d8ee;cursor:pointer">Accompagné</button>
+            <button id="ml-casa" onclick="mornToggle(this,'ml')" style="flex:1;padding:5px;font-size:11px;border-radius:7px;border:1px solid #1e3a5f;background:#0d1525;color:#c8d8ee;cursor:pointer">À la maison</button>
+          </div>
+        </div>
+
+        <!-- Dîner -->
+        <div style="background:#080e1c;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1a2540">
+          <div style="font-size:12px;font-weight:700;color:#a78bfa;margin-bottom:8px">🌙 Dîner</div>
+          <input id="morn-dinner-lieu" class="inp" style="width:100%;font-size:12px;margin-bottom:6px"
+            placeholder="Quartier ou restaurant (ex: Cimiez, à la maison...)"/>
+          <div style="display:flex;gap:5px">
+            <button id="md-seul" onclick="mornToggle(this,'md')" style="flex:1;padding:5px;font-size:11px;border-radius:7px;border:1px solid #1e3a5f;background:#0d1525;color:#c8d8ee;cursor:pointer">Seul</button>
+            <button id="md-acc" onclick="mornToggle(this,'md')" style="flex:1;padding:5px;font-size:11px;border-radius:7px;border:1px solid #1e3a5f;background:#0d1525;color:#c8d8ee;cursor:pointer">Accompagné</button>
+            <button id="md-casa" onclick="mornToggle(this,'md')" style="flex:1;padding:5px;font-size:11px;border-radius:7px;border:1px solid #1e3a5f;background:#0d1525;color:#c8d8ee;cursor:pointer">À la maison</button>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px">
+          <button class="btn-ghost" onclick="closeMorning()" style="flex:1">Passer</button>
+          <button class="btn" onclick="morningStep3()" style="flex:2;background:linear-gradient(135deg,#1d4ed8,#7c3aed)">✨ Voir les reco →</button>
+        </div>
+      </div>
+
+      <!-- ÉTAPE 3 : Recommandations -->
+      <div id="morning-step-3" style="display:none">
+        <div id="morning-reco-content" style="font-size:12px;color:#c8d8ee;line-height:1.6;margin-bottom:14px"></div>
+        <button class="btn" onclick="closeMorning()" style="width:100%;background:linear-gradient(135deg,#166534,#1e4d3a)">C'est parti ! 💪</button>
+      </div>
+
     </div>
   </div>
 
@@ -1405,6 +1832,50 @@ setTimeout(checkMorningBriefing, 600);
   </div>
 
   <!-- Bouton accès planning dans nav -->
+
+  <!-- ═══ RECO REPAS MODAL ═══ -->
+  <div id="reco-modal" style="display:none;position:fixed;inset:0;background:#000000cc;z-index:300;align-items:center;justify-content:center;padding:16px">
+    <div style="background:linear-gradient(135deg,#0d1835,#0a1220);border:1px solid #1e3a6a;border-radius:18px;padding:20px;width:100%;max-width:400px;max-height:88vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div>
+          <div id="reco-title" style="font-size:15px;font-weight:700;color:#e8edf5">🍽️ Recommandations</div>
+          <div id="reco-subtitle" style="font-size:11px;color:#556;margin-top:2px"></div>
+        </div>
+        <button onclick="document.getElementById('reco-modal').style.display='none'" style="background:none;border:none;color:#556;cursor:pointer;font-size:22px;line-height:1">×</button>
+      </div>
+      <div id="reco-content" style="font-size:13px;color:#c8d8ee;line-height:1.7"></div>
+      <button class="btn" onclick="document.getElementById('reco-modal').style.display='none'" style="width:100%;margin-top:14px">OK, merci ! 👍</button>
+    </div>
+  </div>
+
+
+  <!-- ═══ LOGIN SCREEN ═══ -->
+  <div id="login-screen" style="display:none;position:fixed;inset:0;background:#060c18;z-index:9999;align-items:center;justify-content:center;padding:24px">
+    <div style="width:100%;max-width:340px">
+      <div style="text-align:center;margin-bottom:32px">
+        <div style="font-size:48px;margin-bottom:12px">🥗</div>
+        <div style="font-family:serif;font-size:24px;font-weight:700;color:#e8edf5;letter-spacing:.5px">HealthLog</div>
+        <div style="font-size:12px;color:#445;margin-top:6px">Ton coach santé personnel</div>
+      </div>
+      <div style="background:#0d1525;border:1px solid #1e3a5f;border-radius:16px;padding:24px">
+        <div style="font-size:13px;color:#556;margin-bottom:12px;text-align:center">Mot de passe</div>
+        <input id="login-input" type="password" class="inp"
+          style="width:100%;font-size:18px;letter-spacing:4px;text-align:center;padding:14px;margin-bottom:12px"
+          placeholder="••••••"
+          onkeydown="if(event.key==='Enter')checkLogin()"/>
+        <button class="btn" onclick="checkLogin()" style="width:100%;padding:14px;font-size:15px;background:linear-gradient(135deg,#1d4ed8,#7c3aed)">
+          Entrer →
+        </button>
+        <div id="login-error" style="display:none;text-align:center;color:#f87171;font-size:12px;margin-top:10px">
+          ❌ Mot de passe incorrect
+        </div>
+      </div>
+      <div style="text-align:center;margin-top:16px;font-size:11px;color:#2a3a52">
+        Données stockées localement · Privé
+      </div>
+    </div>
+  </div>
+
 
 </body>
 </html>
